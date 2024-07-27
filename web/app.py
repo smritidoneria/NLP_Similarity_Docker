@@ -43,11 +43,86 @@ class Register(Resource):
             "msg": "You successfully signed up for the API"
         }
         return jsonify(retJson)
+def verifyPw(username, password):
+    if not UserExist(username):
+        return False
+
+    hashed_pw = users.find({
+        "Username":username
+    })[0]["Password"]
+
+    if bcrypt.hashpw(password.encode('utf8'), hashed_pw) == hashed_pw:
+        return True
+    else:
+        return False
+
+def countTokens(username):
+    tokens = users.find({
+        "Username":username
+    })[0]["Tokens"]
+    return tokens
+class Detect(Resource):
+    def post(self):
+        #Step 1 get the posted data
+        postedData = request.get_json()
+
+        #Step 2 is to read the data
+        username = postedData["username"]
+        password = postedData["password"]
+        text1 = postedData["text1"]
+        text2 = postedData["text2"]
+
+        if not UserExist(username):
+            retJson = {
+                'status':301,
+                'msg': "Invalid Username"
+            }
+            return jsonify(retJson)
+        #Step 3 verify the username pw match
+        correct_pw = verifyPw(username, password)
+
+        if not correct_pw:
+            retJson = {
+                "status":302,
+                "msg": "Incorrect Password"
+            }
+            return jsonify(retJson)
+        #Step 4 Verify user has enough tokens
+        num_tokens = countTokens(username)
+        if num_tokens <= 0:
+            retJson = {
+                "status": 303,
+                "msg": "You are out of tokens, please refill!"
+            }
+            return jsonify(retJson)
+
+        #Calculate edit distance between text1, text2
+        import spacy
+        nlp = spacy.load('en_core_web_sm')
+        text1 = nlp(text1)
+        text2 = nlp(text2)
+
+        ratio = text1.similarity(text2)
+
+        retJson = {
+            "status":200,
+            "ratio": ratio,
+            "msg":"Similarity score calculated successfully"
+        }
+
+        #Take away 1 token from user
+        current_tokens = countTokens(username)
+        users.update_one(
+            {"Username": username},
+            {"$set": {"Tokens": current_tokens - 1}}
+        )
+
+        return jsonify(retJson)
 
 
 
 api.add_resource(Register, '/register')
-
+api.add_resource(Detect, '/detect')
 
 if __name__=="__main__":
     app.run(host='0.0.0.0')
